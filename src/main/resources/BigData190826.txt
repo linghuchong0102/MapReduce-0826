@@ -119,13 +119,29 @@ Job提交流程(Job真正执行之前):
       ④ Path submitJobDir = new Path(jobStagingArea, jobId.toString()); 
          file:/tmp/hadoop-Administrator/mapred/staging/Administrator148400293/.staging/job_local148400293_0001
       ⑤ copyAndConfigureFiles(job, submitJobDir); 生成job的工作目录
-      ⑥ int maps = writeSplits(job, submitJobDir);
-         生成切片信息 
-      ⑦  writeConf(conf, submitJobFile);  将job执行的配置信息写入到工作目录中
-      ⑧  status = submitClient.submitJob(
+      ⑥ int maps = writeSplits(job, submitJobDir); 生成切片信息，返回切片的数量
+	 [1]. maps = writeNewSplits(job, jobSubmitDir);
+	 [2].InputFormat<?, ?> input =
+		 ReflectionUtils.newInstance(job.getInputFormatClass(), conf);
+             获取InputFormat对象，默认的是 TextInputFormat
+	 [3].List<InputSplit> splits = input.getSplits(job); 
+	     调用InputFormat的getSplits方法获取切面信息
+	     A. long minSize = Math.max(getFormatMinSplitSize(), getMinSplitSize(job));  ==>1
+		long maxSize = getMaxSplitSize(job); ==>Long.MAX_VALUE
+             B. long blockSize = file.getBlockSize(); 获取块大小，本地块大小为32M.
+		long splitSize = computeSplitSize(blockSize, minSize, maxSize); 计算切片大小
+		Math.max(minSize, Math.min(maxSize, blockSize));
+	     C. (double) bytesRemaining)/splitSize > SPLIT_SLOP(1.1) 计算是否需要继续切         
+	
+      ⑦  conf.setInt(MRJobConfig.NUM_MAPS, maps); 根据切片个数设置MapTask个数     
+	  
+      ⑧  writeConf(conf, submitJobFile);  将job执行的配置信息写入到工作目录中
+         
+      ⑨  status = submitClient.submitJob(
           jobId, submitJobDir.toString(), job.getCredentials());
-	  通过LocalJobRunnber 真正的提交Job
-      ⑨  jtFs.delete(submitJobDir, true); Job执行结束后删除工作目录
+	  通过LocalJobRunnber 真正的提交Job 
+
+      ⑩  jtFs.delete(submitJobDir, true); Job执行结束后删除工作目录
 
 
 MapTask:
@@ -136,4 +152,18 @@ ReduceTask:
 
 
 
+
+InputFormat:
+     重要方法:
+	getSplits(): 生成切片信息
+	createRecordReader(): 获取RecordReader来负责数据的读取
+     子抽象类: 
+	FileInputFormat
+            重要方法: 
+		isSplitable():是否可切分
+     具体实现类: 
+	TextInputFormat 默认的
+	CombineTextInputFormat
+	KeyValueTextInputFormat
+	NLineInputFormat
 

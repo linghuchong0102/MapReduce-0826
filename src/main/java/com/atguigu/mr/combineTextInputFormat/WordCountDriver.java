@@ -1,10 +1,11 @@
-package com.atguigu.mr.wordcount;
+package com.atguigu.mr.combineTextInputFormat;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.CombineTextInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
@@ -23,7 +24,7 @@ public class WordCountDriver {
 	
 	public static void main(String[] args) throws Exception {
 		//FileAlreadyExistsException: Output directory file:/d:/output1 already exists
-		args = new String[] {"d:/input/inputWord","d:/output5"};	
+		args = new String[] {"d:/input/inputcombinetextinputformat","d:/output7"};	
 		
 		//1. 获取Job对象
 		Configuration conf  = new Configuration();
@@ -47,6 +48,11 @@ public class WordCountDriver {
 		//6. 设置输入和输出路径
 		FileInputFormat.setInputPaths(job, new Path(args[0]));
 		FileOutputFormat.setOutputPath(job, new Path(args[1]));
+		
+		//设置使用的InputFormat
+		job.setInputFormatClass(CombineTextInputFormat.class);
+		//设置CombineTextInputFormat的虚拟存储大小
+		CombineTextInputFormat.setMaxInputSplitSize(job, 20971520);  //20M
 		
 		//7. 提交Job
 		
