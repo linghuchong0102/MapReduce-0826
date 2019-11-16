@@ -1,0 +1,169 @@
+魏 运慧   
+
+课程安排:   JavaWeb(4天) +  Maven(1) + SSM+SpringBoot(2天) +  Linux(2天) + Redis (2天) +  
+	     MySql高级(2天)+ JVM(1) + JUC(1) + Git(1) + Shell(1) + Hadoop(9) + Zookeeper(1) +HA(1)
+
+统一环境:   JDK8 + MySQL5.5以上 + Eclipse(STS) 
+
+
+Redis:
+
+Java中的 i++ i-- 操作是否为原子操作?   不是. 
+
+面试题:  
+int i = 0  , 有两个线程同时给i进行100次++操作，问 最后i = ?  2 ~ 200
+
+
+Node: 
+    private Node prev ; 
+    private Object value ;
+    private Node next ; 
+
+
+Hash :
+一个java对象如何在Redis中存储：
+
+User ={id=1001 , name=张三, email=zs@sina.com , age =22 ,..... }
+
+第一种方案: key(id) - value(user的json格式)
+
+第二种方案: key(id+属性) - value(属性值)
+	    1001:id  - 1001 
+	    1001:name - 张三
+	    1001:email - zs@sina.com
+	    1001:age - 22 
+
+第三种方案: key(id) - value(hash) 
+	    1001  -  {id-1001 
+		      name-张三
+	              email-zs@sina.com
+		      age-22
+	             }	
+
+PidFile:
+
+执行一个脚本，将Redis的服务关闭 
+pid = cat redis_6379.pid
+kill -9  $pid 
+
+
+
+ab:
+ab –n 请求数  -c 并发数  -p  指定请求数据文件  -T  “application/x-www-form-urlencoded”  测试的请求
+
+ab -n 400 -c 300 -p ~/postfile -T "application/x-www-form-urlencoded"  http://192.168.19.40:8888/seckill/doseckill 
+ 
+
+
+AOF重写:
+
+set balance 10000
+set k1 v1 
+decrby balance  1000
+set k2 v2 
+incrby balance 2000
+
+set balance 11000
+set k1 v1 
+set k2 v2 
+
+
+
+Redis集群:
+./redis-trib.rb create --replicas 1 192.168.202.100:6379 192.168.202.100:6380  192.168.202.100:6381 192.168.202.100:6389 192.168.202.100:6390  192.168.202.100:6391
+
+
+
+Mysql主从
+
+GRANT REPLICATION SLAVE ON *.* TO 'slave101'@'192.168.202.101' IDENTIFIED BY '123456';
+
+CHANGE MASTER TO MASTER_HOST='192.168.202.100',MASTER_USER='slave101',MASTER_PASSWORD='123456',MASTER_LOG_FILE='mysql-bin.000009',MASTER_LOG_POS=259;
+	    
+
+
+克隆虚拟机:
+1. vim /etc/udev/rules.d/70-persistent-net.rules   修改网卡信息，拷贝mac地址
+2. vim /etc/sysconfig/network-scripts/ifcfg-eth0   修改ip地址和mac地址
+3. vim /etc/sysconfig/network  修改主机名
+4. vim /etc/hosts  查看ip和主机的映射
+5. 添加用户设置root权限:
+   useradd  atguigu 
+   passwd atguigu 
+   vim /etc/sudoers  91行下面添加  atguigu ALL=(ALL)       NOPASSWD:ALL
+
+
+
+
+
+Job提交流程(Job真正执行之前): 
+1. if (state == JobState.DEFINE)   ==> submit();
+   判断当前Job的状态是否为 DEFINE
+
+2. submit():
+   1). ensureState(JobState.DEFINE); 再次确认Job的状态
+   2). setUseNewAPI(); 设置使用新的API
+   3). connect(): 创建Cluster对象.
+     ① return new Cluster(getConfiguration());
+     ② initialize(jobTrackAddr, conf);	
+        clientProtocol = provider.create(conf);  获取到当前运行环境 LocalJobRunner
+  
+	ClientProtocol:  LocalJobRunner | YarnRunner
+  
+   4). return submitter.submitJobInternal(Job.this, cluster);
+       通过JobSumitter提交Job
+     
+      ① checkSpecs(job); 校验输出路径是否存在
+      ② Path jobStagingArea = JobSubmissionFiles.getStagingDir(cluster, conf); Job工作目录
+      ③ JobID jobId = submitClient.getNewJobID(); 生成Jobid
+      ④ Path submitJobDir = new Path(jobStagingArea, jobId.toString()); 
+         file:/tmp/hadoop-Administrator/mapred/staging/Administrator148400293/.staging/job_local148400293_0001
+      ⑤ copyAndConfigureFiles(job, submitJobDir); 生成job的工作目录
+      ⑥ int maps = writeSplits(job, submitJobDir); 生成切片信息，返回切片的数量
+	 [1]. maps = writeNewSplits(job, jobSubmitDir);
+	 [2].InputFormat<?, ?> input =
+		 ReflectionUtils.newInstance(job.getInputFormatClass(), conf);
+             获取InputFormat对象，默认的是 TextInputFormat
+	 [3].List<InputSplit> splits = input.getSplits(job); 
+	     调用InputFormat的getSplits方法获取切面信息
+	     A. long minSize = Math.max(getFormatMinSplitSize(), getMinSplitSize(job));  ==>1
+		long maxSize = getMaxSplitSize(job); ==>Long.MAX_VALUE
+             B. long blockSize = file.getBlockSize(); 获取块大小，本地块大小为32M.
+		long splitSize = computeSplitSize(blockSize, minSize, maxSize); 计算切片大小
+		Math.max(minSize, Math.min(maxSize, blockSize));
+	     C. (double) bytesRemaining)/splitSize > SPLIT_SLOP(1.1) 计算是否需要继续切         
+	
+      ⑦  conf.setInt(MRJobConfig.NUM_MAPS, maps); 根据切片个数设置MapTask个数     
+	  
+      ⑧  writeConf(conf, submitJobFile);  将job执行的配置信息写入到工作目录中
+         
+      ⑨  status = submitClient.submitJob(
+          jobId, submitJobDir.toString(), job.getCredentials());
+	  通过LocalJobRunnber 真正的提交Job 
+
+      ⑩  jtFs.delete(submitJobDir, true); Job执行结束后删除工作目录
+
+
+MapTask:
+
+Shuffle:
+
+ReduceTask:
+
+
+
+
+InputFormat:
+     重要方法:
+	getSplits(): 生成切片信息
+	createRecordReader(): 获取RecordReader来负责数据的读取
+     子抽象类: 
+	FileInputFormat
+            重要方法: 
+		isSplitable():是否可切分
+     具体实现类: 
+	TextInputFormat 默认的
+	CombineTextInputFormat
+	KeyValueTextInputFormat
+	NLineInputFormat
+
