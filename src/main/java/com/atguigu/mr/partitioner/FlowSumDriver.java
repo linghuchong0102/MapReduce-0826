@@ -12,7 +12,7 @@ public class FlowSumDriver {
 	
 	public static void main(String[] args)  throws Exception{
 		
-		args = new String[] {"D:/input/inputflow","d:/output6"};
+		args = new String[] {"D:/input/inputflow","d:/output7"};
 		
 		//1. 获取Job
 		Configuration conf = new Configuration();
@@ -41,7 +41,7 @@ public class FlowSumDriver {
 		//设置分区器
 		job.setPartitionerClass(PhoneNumberPartitioner.class);
 		//设置reduce的个数
-		job.setNumReduceTasks(3);
+		job.setNumReduceTasks(5);
 		
 		//7.提交Job
 		job.waitForCompletion(true);

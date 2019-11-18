@@ -23,7 +23,7 @@ public class WordCountDriver {
 	
 	public static void main(String[] args) throws Exception {
 		//FileAlreadyExistsException: Output directory file:/d:/output1 already exists
-		args = new String[] {"d:/input/inputWord","d:/output2"};	
+		args = new String[] {"d:/input/inputWord","d:/output8"};	
 		
 		//1. 获取Job对象
 		Configuration conf  = new Configuration();
@@ -49,7 +49,7 @@ public class WordCountDriver {
 		FileOutputFormat.setOutputPath(job, new Path(args[1]));
 		
 		//设置Reduce的个数
-		job.setNumReduceTasks(2);
+		//job.setNumReduceTasks(2);
 		
 		//7. 提交Job
 		

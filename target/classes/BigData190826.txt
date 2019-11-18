@@ -167,3 +167,23 @@ InputFormat:
 	KeyValueTextInputFormat
 	NLineInputFormat
 
+Partitioner 分区器
+    默认的分区器  HashPartitioner
+    public int getPartition(K key, V value,
+                          int numReduceTasks) {
+       return (key.hashCode() & Integer.MAX_VALUE) % numReduceTasks;
+    }
+
+    如何确定每个Key的分区:
+     partitions = jobContext.getNumReduceTasks();
+      if (partitions > 1) {
+        partitioner = (org.apache.hadoop.mapreduce.Partitioner<K,V>)
+          ReflectionUtils.newInstance(jobContext.getPartitionerClass(), job);
+      } else {
+        partitioner = new org.apache.hadoop.mapreduce.Partitioner<K,V>() {
+          @Override
+          public int getPartition(K key, V value, int numPartitions) {
+            return partitions - 1;
+          }
+        };
+      }
