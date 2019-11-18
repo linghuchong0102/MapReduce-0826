@@ -1,4 +1,4 @@
-package com.atguigu.mr.wordcount;
+package com.atguigu.mr.combiner;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
@@ -23,7 +23,7 @@ public class WordCountDriver {
 	
 	public static void main(String[] args) throws Exception {
 		//FileAlreadyExistsException: Output directory file:/d:/output1 already exists
-		args = new String[] {"d:/input/inputWord","d:/output2"};	
+		args = new String[] {"d:/input/inputWord","d:/output3"};	
 		
 		//1. 获取Job对象
 		Configuration conf  = new Configuration();
@@ -50,6 +50,9 @@ public class WordCountDriver {
 		
 		//设置Reduce的个数
 		job.setNumReduceTasks(2);
+		
+		//设置Combiner
+		job.setCombinerClass(WordCountReducer.class);
 		
 		//7. 提交Job
 		
