@@ -145,11 +145,149 @@ Job提交流程(Job真正执行之前):
 
 
 MapTask:
+1.  status = submitClient.submitJob(jobId, submitJobDir.toString(), job.getCredentials());
+    通过LocalJobRunnber 真正的提交Job 
+    1). Job job = new Job(JobID.downgrade(jobid), jobSubmitDir);
+        构造一个真正执行的Job对象  LocalJobRunner.Job
+	[1]. this.start(); 启动Job线程
+	[2]. 执行LocalJobRunner.Job的run方法.
+	     ①  List<RunnableWithThrowable> mapRunnables = getMapTaskRunnables(
+                 taskSplitMetaInfos, jobId, mapOutputFiles);
+		 获取当前的Job需要启动几个任务  LocalJobRunner$Job$MapTaskRunnable
+	     ②  runTasks(mapRunnables, mapService, "map");
+	         把MapTaskRunnable 交给线程池执行
+		 A.  for (Runnable r : runnables) {
+			service.submit(r);
+		     } 
+		     迭代所有的MapTaskRunnable ，提交到线程池执行.
+
+		 B. 执行MapTaskRunnable中的run方法. 
+		    
+		    I: MapTask map = new MapTask(systemJobFile.toString(), mapId, taskId,
+		      info.getSplitIndex(), 1);
+		      创建MapTask对象
+		    II: map.run(localConf, Job.this);
+		       调用MapTask的run方法. 
+		       [1]. runNewMapper(job, splitMetaInfo, umbilical, reporter);
+		            执行MapTask的runNewMapper方法
+		            ①  mapper.run(mapperContext);
+			        执行Mapper中的run方法. 
+		            ②  执行到xxxMapper中的map方法。		   
 
 Shuffle:
+一、 shuffle准备工作
+1.  MapTask中的run方法中的runNewMapper()
+    1).org.apache.hadoop.mapreduce.Mapper<INKEY,INVALUE,OUTKEY,OUTVALUE> mapper =
+      (org.apache.hadoop.mapreduce.Mapper<INKEY,INVALUE,OUTKEY,OUTVALUE>)
+        ReflectionUtils.newInstance(taskContext.getMapperClass(), job);
+       获取Mapper对象
+    2).org.apache.hadoop.mapreduce.InputFormat<INKEY,INVALUE> inputFormat =
+      (org.apache.hadoop.mapreduce.InputFormat<INKEY,INVALUE>)
+        ReflectionUtils.newInstance(taskContext.getInputFormatClass(), job);
+       获取到InputFormat对象
+    3). org.apache.hadoop.mapreduce.RecordReader<INKEY,INVALUE> input =
+      new NewTrackingRecordReader<INKEY,INVALUE>
+        (split, inputFormat, reporter, taskContext);
+       获取到RecordReader对象
+    4).// get an output object
+    if (job.getNumReduceTasks() == 0) {
+      output = 
+        new NewDirectOutputCollector(taskContext, job, umbilical, reporter);
+    } else {
+      output = new NewOutputCollector(taskContext, job, umbilical, reporter);
+    }
+      根据Reduce的个数，获取收集器对象.用于收集Map写出的kv
+       
+      ① collector = createSortingCollector(job, reporter);
+         创建收集器对象MapOutputCollector
+
+	 [1]. Class<?>[] collectorClasses = job.getClasses(
+		JobContext.MAP_OUTPUT_COLLECTOR_CLASS_ATTR, MapOutputBuffer.class);
+	      获取到具体的收集器对象的类型 MapOutputBuffer
+	 [2]. MapOutputCollector<KEY, VALUE> collector =
+                  ReflectionUtils.newInstance(subclazz, job);
+	      创建收集器对象
+	 [3]. collector.init(context);  初始化收集器对象
+	      A. final float spillper =
+		 job.getFloat(JobContext.MAP_SORT_SPILL_PERCENT, (float)0.8);
+		 获取到溢写百分比
+	      B. final int sortmb = job.getInt(JobContext.IO_SORT_MB, 100);
+	         获取到缓冲区的大小
+	      C. sorter = ReflectionUtils.newInstance(job.getClass("map.sort.class",
+			  QuickSort.class, IndexedSorter.class), job);
+	         获取到排序对象
+              D. comparator = job.getOutputKeyComparator(); 获取分组比较器
+	         1>.WritableComparator.get(getMapOutputKeyClass().asSubclass(WritableComparable.class), this);
+
+	      E. compression  压缩相关的操作
+
+	      F. combiner  合并
+
+	      G. spillThread.start();  
+	         启动溢写线程
+
+
+二、 收集  排序   溢写  合并 
+1. Mapper类中的  context.write(k, v);
+2. mapContext.write(key, value);
+3. output.write(key, value);
+4. collector.collect(key, value,
+                        partitioner.getPartition(key, value, partitions)); 
+   通过MapOutputBuffer收集map写出的kv
+   1).startSpill(); 满足溢写条件开始溢写
+      [1]. spillReady.signal(); 通知开始进行溢写
+   2).sortAndSpill(): 排序溢写
+      [1].final Path filename =
+            mapOutputFile.getSpillFileForWrite(numSpills, size); 获取溢写文件名
+           out = rfs.create(filename);  创建溢写文件
+      [2].sorter.sort(MapOutputBuffer.this, mstart, mend, reporter); 排序
+
+      [3]. if (totalIndexCacheMemory >= indexCacheMemoryLimit) {
+          // create spill index file
+          Path indexFilename =
+              mapOutputFile.getSpillIndexFileForWrite(numSpills, partitions
+                  * MAP_OUTPUT_INDEX_RECORD_LENGTH);
+          spillRec.writeToFile(indexFilename, job);
+
+	  判断存放排好序的索引占用的内存是否大于等于阈值，如果满足，也需要在溢写到磁盘.
+
+5. 在Mapper中所有的kv全部写出去以后，会执行 runNewMapper中的 output.close(mapperContext);
+   1).  collector.flush();
+   2).  sortAndSpill();
+   3).  mergeParts();
+	[1].Path finalOutputFile =
+             mapOutputFile.getOutputFileForWrite(finalOutFileSize);
+	     获取最终合并完的溢写文件名  file.out
+	   Path finalIndexFile =
+           mapOutputFile.getOutputIndexFileForWrite(finalIndexFileSize);
+	     获取最终溢写到磁盘的索引文件  file.out.index
+	[2]. Merger.writeFile(kvIter, writer, reporter, job);
+	     将合并好的数据写到最终的文件中
+	[3]. spillRec.writeToFile(finalIndexFile, job);
+	     将索引文件也写到文件中
+	[4].  rfs.delete(filename[i],true);
+	     将溢写文件删除
 
 ReduceTask:
-
+1. List<RunnableWithThrowable> reduceRunnables = getReduceTaskRunnables(
+                jobId, mapOutputFiles);
+   根据Job信息获取到 LocalJobRunner$Job$ReduceTaskRunnable
+2. runTasks(reduceRunnables, reduceService, "reduce");
+   把ReduceTaskRunnable 交给线程池去执行
+   1). for (Runnable r : runnables) {
+        service.submit(r);
+      }
+      迭代出每一个ReduceTaskRunnable 提交到线程池执行
+      [1] . 执行ReduceTaskRunnable 的run方法. 
+          ① ReduceTask reduce = new ReduceTask(systemJobFile.toString(),
+              reduceId, taskId, mapIds.size(), 1);
+	     创建ReduceTask对象
+          ②  reduce.run(localConf, Job.this);
+	      执行ReduceTask中的run方法
+	  ③ runNewReducer(job, umbilical, reporter, rIter, comparator, 
+                    keyClass, valueClass);
+             A. reducer.run(reducerContext); 执行Reducer中的run方法
+	     B. 执行xxxReducer中的reduce方法。
 
 
 
@@ -166,6 +304,18 @@ InputFormat:
 	CombineTextInputFormat
 	KeyValueTextInputFormat
 	NLineInputFormat
+
+OutputFormat
+     重要方法: 
+	getRecordWriter(): 获取RecordWriter来负责数据的写出
+     子抽象类:
+	FileOutputFormat
+     具体实现类:
+	SequenceFileOutputFormat
+	TextOutputFormat
+
+
+
 
 Partitioner 分区器
     默认的分区器  HashPartitioner

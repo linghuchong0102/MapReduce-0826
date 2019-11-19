@@ -145,8 +145,34 @@ Job提交流程(Job真正执行之前):
 
 
 MapTask:
+1.  status = submitClient.submitJob(jobId, submitJobDir.toString(), job.getCredentials());
+    通过LocalJobRunnber 真正的提交Job 
+    1). Job job = new Job(JobID.downgrade(jobid), jobSubmitDir);
+        构造一个真正执行的Job对象  LocalJobRunner.Job
+	[1]. this.start(); 启动Job线程
+	[2]. 执行LocalJobRunner.Job的run方法.
+	     ①  List<RunnableWithThrowable> mapRunnables = getMapTaskRunnables(
+                 taskSplitMetaInfos, jobId, mapOutputFiles);
+		 获取当前的Job需要启动几个任务  LocalJobRunner$Job$MapTaskRunnable
+	     ②  runTasks(mapRunnables, mapService, "map");
+	         把MapTaskRunnable 交给线程池执行
+		 A.  for (Runnable r : runnables) {
+			service.submit(r);
+		     } 
+		     迭代所有的MapTaskRunnable ，提交到线程池执行.
 
-
+		 B. 执行MapTaskRunnable中的run方法. 
+		    
+		    I: MapTask map = new MapTask(systemJobFile.toString(), mapId, taskId,
+		      info.getSplitIndex(), 1);
+		      创建MapTask对象
+		    II: map.run(localConf, Job.this);
+		       调用MapTask的run方法. 
+		       [1]. runNewMapper(job, splitMetaInfo, umbilical, reporter);
+		            执行MapTask的runNewMapper方法
+		            ①  mapper.run(mapperContext);
+			        执行Mapper中的run方法. 
+		            ②  执行到xxxMapper中的map方法。		   
 
 Shuffle:
 一、 shuffle准备工作
@@ -243,7 +269,25 @@ Shuffle:
 	     将溢写文件删除
 
 ReduceTask:
-
+1. List<RunnableWithThrowable> reduceRunnables = getReduceTaskRunnables(
+                jobId, mapOutputFiles);
+   根据Job信息获取到 LocalJobRunner$Job$ReduceTaskRunnable
+2. runTasks(reduceRunnables, reduceService, "reduce");
+   把ReduceTaskRunnable 交给线程池去执行
+   1). for (Runnable r : runnables) {
+        service.submit(r);
+      }
+      迭代出每一个ReduceTaskRunnable 提交到线程池执行
+      [1] . 执行ReduceTaskRunnable 的run方法. 
+          ① ReduceTask reduce = new ReduceTask(systemJobFile.toString(),
+              reduceId, taskId, mapIds.size(), 1);
+	     创建ReduceTask对象
+          ②  reduce.run(localConf, Job.this);
+	      执行ReduceTask中的run方法
+	  ③ runNewReducer(job, umbilical, reporter, rIter, comparator, 
+                    keyClass, valueClass);
+             A. reducer.run(reducerContext); 执行Reducer中的run方法
+	     B. 执行xxxReducer中的reduce方法。
 
 
 
@@ -260,6 +304,18 @@ InputFormat:
 	CombineTextInputFormat
 	KeyValueTextInputFormat
 	NLineInputFormat
+
+OutputFormat
+     重要方法: 
+	getRecordWriter(): 获取RecordWriter来负责数据的写出
+     子抽象类:
+	FileOutputFormat
+     具体实现类:
+	SequenceFileOutputFormat
+	TextOutputFormat
+
+
+
 
 Partitioner 分区器
     默认的分区器  HashPartitioner

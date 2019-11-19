@@ -23,7 +23,7 @@ public class WordCountDriver {
 	
 	public static void main(String[] args) throws Exception {
 		//FileAlreadyExistsException: Output directory file:/d:/output1 already exists
-		args = new String[] {"d:/input/inputWord","d:/output8"};	
+		args = new String[] {"d:/input/inputWord","d:/output9"};	
 		
 		//1. 获取Job对象
 		Configuration conf  = new Configuration();
