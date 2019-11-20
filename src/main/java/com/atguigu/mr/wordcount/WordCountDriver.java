@@ -23,10 +23,23 @@ public class WordCountDriver {
 	
 	public static void main(String[] args) throws Exception {
 		//FileAlreadyExistsException: Output directory file:/d:/output1 already exists
-		args = new String[] {"d:/input/inputWord","d:/output9"};	
+		
+		args = new String[] {"d:/input/inputWord","d:/output3"};	
 		
 		//1. 获取Job对象
 		Configuration conf  = new Configuration();
+		
+		//Map输出未启用压缩: 74091050
+		//Map输出启用压缩:    270908  
+		conf.set("mapreduce.map.output.compress", "true");
+		conf.set("mapreduce.map.output.compress.codec", "org.apache.hadoop.io.compress.DefaultCodec");
+		
+		//Reduce输出未启用压缩: 176069
+		//Reduce输出启用压缩:   53311
+		conf.set("mapreduce.output.fileoutputformat.compress", "true");
+		conf.set("mapreduce.output.fileoutputformat.compress.codec", "org.apache.hadoop.io.compress.DefaultCodec");
+		
+		
 		Job job = Job.getInstance(conf);
 		
 		//2. 关联jar
